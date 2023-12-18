@@ -79,11 +79,11 @@ enabled = true
 provider = "disqus"
 
 [comments.disqusjs]
-shortname = "yameizitd-github-io"
+shortname = "yameizitd"
 apiUrl = ""
 apiKey = ""
-admin = ""
-adminLabel = ""
+admin = "yameizitd"
+adminLabel = "yameizitd"
 
 [comments.utterances]
 repo = ""
