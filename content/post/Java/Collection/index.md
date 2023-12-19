@@ -9,7 +9,7 @@ tags:
   - Map
   - HashMap
 categories:
-  - java
+  - note
 ---
 
 Java 的集合框架主要分为两个部分：Collection 和 Map

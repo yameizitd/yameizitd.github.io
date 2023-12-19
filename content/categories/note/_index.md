@@ -1,6 +1,6 @@
 ---
-title: 折腾小记
-description: 记录一些好玩有趣的折腾经历
+title: 学习笔记
+description: 记录学习成长过程的笔记
 image: cover.jpg
 
 # Badge style
