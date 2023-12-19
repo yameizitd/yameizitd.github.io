@@ -1,0 +1,295 @@
+<!doctype html><html lang=en dir=ltr><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><meta name=description content="加权轮询算法是负载均衡算法中最常用的算法之一，本文介绍的是由 nginx 实现的一种平滑的加权轮询算法，能够将请求根据权重均匀地轮询分摊到每个节点上"><title>平滑的加权轮询算法</title>
+<link rel=canonical href=https://yameizitd.github.io/p/%E5%B9%B3%E6%BB%91%E7%9A%84%E5%8A%A0%E6%9D%83%E8%BD%AE%E8%AF%A2%E7%AE%97%E6%B3%95/><link rel=stylesheet href=/scss/style.min.6b9dd0f375f20486079a2269e206c76c4f0776ce3c3c5ea70f85d875885ab26e.css><meta property="og:title" content="平滑的加权轮询算法"><meta property="og:description" content="加权轮询算法是负载均衡算法中最常用的算法之一，本文介绍的是由 nginx 实现的一种平滑的加权轮询算法，能够将请求根据权重均匀地轮询分摊到每个节点上"><meta property="og:url" content="https://yameizitd.github.io/p/%E5%B9%B3%E6%BB%91%E7%9A%84%E5%8A%A0%E6%9D%83%E8%BD%AE%E8%AF%A2%E7%AE%97%E6%B3%95/"><meta property="og:site_name" content="yameizitd"><meta property="og:type" content="article"><meta property="article:section" content="Post"><meta property="article:tag" content="LoadBalancer"><meta property="article:tag" content="LoadBalance"><meta property="article:tag" content="RoundRobin"><meta property="article:published_time" content="2023-07-24T00:00:00+00:00"><meta property="article:modified_time" content="2023-07-24T00:00:00+00:00"><meta property="og:image" content="https://yameizitd.github.io/p/%E5%B9%B3%E6%BB%91%E7%9A%84%E5%8A%A0%E6%9D%83%E8%BD%AE%E8%AF%A2%E7%AE%97%E6%B3%95/cover.jpg"><meta name=twitter:title content="平滑的加权轮询算法"><meta name=twitter:description content="加权轮询算法是负载均衡算法中最常用的算法之一，本文介绍的是由 nginx 实现的一种平滑的加权轮询算法，能够将请求根据权重均匀地轮询分摊到每个节点上"><meta name=twitter:card content="summary_large_image"><meta name=twitter:image content="https://yameizitd.github.io/p/%E5%B9%B3%E6%BB%91%E7%9A%84%E5%8A%A0%E6%9D%83%E8%BD%AE%E8%AF%A2%E7%AE%97%E6%B3%95/cover.jpg"><link rel="shortcut icon" href=/favicon.png></head><body class=article-page><script>(function(){const e="StackColorScheme";localStorage.getItem(e)||localStorage.setItem(e,"auto")})()</script><script>(function(){const t="StackColorScheme",e=localStorage.getItem(t),n=window.matchMedia("(prefers-color-scheme: dark)").matches===!0;e=="dark"||e==="auto"&&n?document.documentElement.dataset.scheme="dark":document.documentElement.dataset.scheme="light"})()</script><div class="container main-container flex on-phone--column extended"><aside class="sidebar left-sidebar sticky"><button class="hamburger hamburger--spin" type=button id=toggle-menu aria-label="Toggle Menu">
+<span class=hamburger-box><span class=hamburger-inner></span></span></button><header><figure class=site-avatar><a href=/><img src=/img/avatar_hu92d9cdee38c9c83afc5e9f9558b7ada1_451689_300x0_resize_box_3.png width=300 height=300 class=site-logo loading=lazy alt=Avatar>
+</a><span class=emoji>😺</span></figure><div class=site-meta><h1 class=site-name><a href=/>yameizitd</a></h1><h2 class=site-description>Goodbye, Adriatic free and debauched life</h2></div></header><ol class=social-menu><li><a href=https://github.com/yameizitd target=_blank title=GitHub rel=me><svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-brand-github" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentcolor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6.0 00-1.3-3.2 4.2 4.2.0 00-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3.0 00-6.2.0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2.0 00-.1 3.2A4.6 4.6.0 004 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21"/></svg></a></li><li><a href=mailto:yameizitd@gmail.com target=_blank title=Email rel=me><!doctype html><svg t="1702518145393" class="icon" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" p-id="2320" width="64" height="64" xmlns:xlink="http://www.w3.org/1999/xlink"><path d="M799.219 812.558q-144.552.0-578.207.0-50.876.0-87.216-36.34-37.147-35.532-37.147-86.408.0-25.034.0-62.182.0-37.955.0-87.216.0-12.921.0-32.302t0-44.415q0-50.876.0-127.593.0-50.876 36.34-87.216 36.34-35.532 88.023-35.532 193.005.0 578.207.0 50.876.0 87.216 35.532 37.147 36.34 37.147 87.216.0 118.71.0 355.323.0 50.876-36.34 85.601-36.34 35.532-88.023 35.532zM888.05 336.102q0-36.34-25.842-61.374-26.649-25.842-62.989-25.842-193.005.0-578.207.0-36.34.0-62.989 25.842-25.842 25.034-25.842 61.374.0 12.113.0 36.34.0 20.189.0 50.068.0 22.611.0 50.876.0 20.996.0 45.223.0 72.68.0 172.816.0 36.34 25.842 61.374 26.649 25.842 62.989 25.842 193.005.0 578.207.0 36.34.0 62.989-25.842 25.842-25.034 25.842-61.374.0-118.71.0-355.323zM822.638 647.817q5.653-5.653 5.653-12.921t-5.653-12.113q-50.068-50.876-151.012-151.82 37.147-35.532 148.59-142.129 4.845-4.845 4.845-12.113t-4.845-12.113q-4.845-5.653-12.113-5.653-7.268.0-12.921 5.653-95.291 91.253-285.066 272.953-71.872-67.834-288.296-272.953-4.845-5.653-12.113-5.653t-12.921 5.653q-4.845 4.845-4.845 12.113t5.653 12.113q50.068 47.646 150.205 143.744-37.955 37.147-151.82 150.205-5.653 4.845-5.653 12.113.0 7.268 5.653 12.921 8.076 4.845 12.113 4.845 8.883.0 12.921-4.845 50.068-50.876 151.012-151.82 30.687 29.879 124.363 118.71 5.653 4.845 12.921 4.845 6.46.0 12.113-4.845 41.185-39.57 123.555-118.71 37.955 37.955 151.82 151.82 5.653 4.845 12.113 4.845 10.498.0 13.728-4.845z" p-id="2321" fill="#4c4c4c"/></svg></a></li></ol><ol class=menu id=main-menu><li><a href=/><svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-home" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentcolor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><polyline points="5 12 3 12 12 3 21 12 19 12"/><path d="M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/><path d="M9 21v-6a2 2 0 012-2h2a2 2 0 012 2v6"/></svg><span>Home</span></a></li><li><a href=/archives/><svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-archive" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentcolor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><rect x="3" y="4" width="18" height="4" rx="2"/><path d="M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8"/><line x1="10" y1="12" x2="14" y2="12"/></svg><span>Archives</span></a></li><li><a href=/search/><svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-search" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentcolor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><circle cx="10" cy="10" r="7"/><line x1="21" y1="21" x2="15" y2="15"/></svg><span>Search</span></a></li><li><a href=/links/><svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-link" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentcolor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><path d="M10 14a3.5 3.5.0 005 0l4-4a3.5 3.5.0 00-5-5l-.5.5"/><path d="M14 10a3.5 3.5.0 00-5 0l-4 4a3.5 3.5.0 005 5l.5-.5"/></svg><span>Links</span></a></li><div class=menu-bottom-section><li id=dark-mode-toggle><svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-toggle-left" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentcolor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><circle cx="8" cy="12" r="2"/><rect x="2" y="6" width="20" height="12" rx="6"/></svg><svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-toggle-right" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentcolor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><circle cx="16" cy="12" r="2"/><rect x="2" y="6" width="20" height="12" rx="6"/></svg><span>Dark Mode</span></li></div></ol></aside><aside class="sidebar right-sidebar sticky"><section class="widget archives"><div class=widget-icon><svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-hash" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentcolor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><line x1="5" y1="9" x2="19" y2="9"/><line x1="5" y1="15" x2="19" y2="15"/><line x1="11" y1="4" x2="7" y2="20"/><line x1="17" y1="4" x2="13" y2="20"/></svg></div><h2 class="widget-title section-title">Table of contents</h2><div class=widget--toc><nav id=TableOfContents><ol><li><a href=#原理>原理</a><ol><li><a href=#参数>参数</a></li><li><a href=#举个栗子>举个栗子</a></li></ol></li><li><a href=#实现>实现</a><ol><li><a href=#节点类>节点类</a></li><li><a href=#负载均衡器>负载均衡器</a></li><li><a href=#测试>测试</a></li></ol></li></ol></nav></div></section></aside><main class="main full-width"><article class="has-image main-article"><header class=article-header><div class=article-image><a href=/p/%E5%B9%B3%E6%BB%91%E7%9A%84%E5%8A%A0%E6%9D%83%E8%BD%AE%E8%AF%A2%E7%AE%97%E6%B3%95/><img src=/p/%E5%B9%B3%E6%BB%91%E7%9A%84%E5%8A%A0%E6%9D%83%E8%BD%AE%E8%AF%A2%E7%AE%97%E6%B3%95/cover_hu3d03a01dcc18bc5be0e67db3d8d209a6_331037_800x0_resize_q75_box.jpg srcset="/p/%E5%B9%B3%E6%BB%91%E7%9A%84%E5%8A%A0%E6%9D%83%E8%BD%AE%E8%AF%A2%E7%AE%97%E6%B3%95/cover_hu3d03a01dcc18bc5be0e67db3d8d209a6_331037_800x0_resize_q75_box.jpg 800w, /p/%E5%B9%B3%E6%BB%91%E7%9A%84%E5%8A%A0%E6%9D%83%E8%BD%AE%E8%AF%A2%E7%AE%97%E6%B3%95/cover_hu3d03a01dcc18bc5be0e67db3d8d209a6_331037_1600x0_resize_q75_box.jpg 1600w" width=800 height=534 loading=lazy alt="Featured image of post 平滑的加权轮询算法"></a></div><div class=article-details><header class=article-category><a href=/categories/note/ style=background-color:#2a9d8f;color:#fff>学习笔记</a></header><div class=article-title-wrapper><h2 class=article-title><a href=/p/%E5%B9%B3%E6%BB%91%E7%9A%84%E5%8A%A0%E6%9D%83%E8%BD%AE%E8%AF%A2%E7%AE%97%E6%B3%95/>平滑的加权轮询算法</a></h2><h3 class=article-subtitle>加权轮询算法是负载均衡算法中最常用的算法之一，本文介绍的是由 nginx 实现的一种平滑的加权轮询算法，能够将请求根据权重均匀地轮询分摊到每个节点上</h3></div><footer class=article-time><div><svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-calendar-time" width="56" height="56" viewBox="0 0 24 24" stroke-width="2" stroke="currentcolor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><path d="M11.795 21H5a2 2 0 01-2-2V7a2 2 0 012-2h12a2 2 0 012 2v4"/><circle cx="18" cy="18" r="4"/><path d="M15 3v4"/><path d="M7 3v4"/><path d="M3 11h16"/><path d="M18 16.496V18l1 1"/></svg><time class=article-time--published>Jul 24, 2023</time></div><div><svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-clock" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentcolor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg><time class=article-time--reading>4 minute read</time></div></footer></div></header><section class=article-content><p>nginx 中使用 upstream 标识转发的上游服务的服务列表，如下：</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre tabindex=0 class=chroma><code><span class=lnt>1
+</span><span class=lnt>2
+</span><span class=lnt>3
+</span><span class=lnt>4
+</span></code></pre></td><td class=lntd><pre tabindex=0 class=chroma><code class=language-fallback data-lang=fallback><span class=line><span class=cl>upstream example {
+</span></span><span class=line><span class=cl>    server 192.168.21.1:8080;
+</span></span><span class=line><span class=cl>    server 192.168.21.2:8080;
+</span></span><span class=line><span class=cl>}
+</span></span></code></pre></td></tr></table></div></div><p>默认使用的负载均衡策略是轮询，当服务节点的承载能力不一样时，nginx 可以支持使用 <code>weight</code> 属性确定节点的负载权重，如下所示：</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre tabindex=0 class=chroma><code><span class=lnt>1
+</span><span class=lnt>2
+</span><span class=lnt>3
+</span><span class=lnt>4
+</span><span class=lnt>5
+</span></code></pre></td><td class=lntd><pre tabindex=0 class=chroma><code class=language-fallback data-lang=fallback><span class=line><span class=cl>upstream cluster {
+</span></span><span class=line><span class=cl>	server 192.168.21.1:8080 weight=2;
+</span></span><span class=line><span class=cl>	server 192.168.21.2:8080 weight=1;
+</span></span><span class=line><span class=cl>	server 192.168.21.3:8080 weight=3;
+</span></span><span class=line><span class=cl>}
+</span></span></code></pre></td></tr></table></div></div><p>按照常规的思路，每 6 个请求一轮回，前 2 次转到 <code>192.168.21.1:8080</code> ，第 3 次转到 <code>192.168.21.2:8080</code> ，最后 3 次转到 <code>192.168.21.3:8080</code> 即可</p><p>但是这样的加权轮询算法有一个问题，就是不够“平滑”，假设权重的列表是类似 [10, 2, 1] 这种形式，那么前十次请求将会全部转发到第一个节点，要是能把后面两个节点穿插到这些请求中就好了</p><p>nginx 就使用一种“平滑”的加权轮询算法实现了这一特点，在上面的例子中，我们假设</p><ul><li>192.168.21.1:8080：A</li><li>192.168.21.2:8080：B</li><li>192.168.21.3:8080：C</li></ul><p>对于普通的加权轮询算法，其 6 次请求的负载列表如下：</p><p>[A, A, B, C, C, C]</p><p>而使用 nginx 的加权轮询算法，得到的负载列表则如下所示：</p><p>[C, A, B, C, A, C]</p><p>可以看到 nginx 的加权轮询算法得到的负载列表更加的均匀，有效地将所有节点根据权重均匀的分摊开来，下面让我们看看 nginx 是如何实现的</p><h2 id=原理>原理</h2><h3 id=参数>参数</h3><p>在 nginx 的加权轮询算法中，有 3 个重要的参数：</p><ul><li>weight：配置文件中指定的权重，这个值是固定不变的</li><li>effective_weight：节点的有效权重，其初始值是 weight。在释放后端的过程中，如果与节点的通信发生错误，就减小 effective_weight；在后续请求中，选取节点时再逐步增加 effective_weight 直至恢复到 weight。这个参数的作用主要就是当节点发生错误时，减少其权重，减少分摊到此节点的请求</li><li>current_weight：节点当前的权重，初始值为 0，会在选取过程中动态调整。选取过程中，遍历所有节点，使得每个节点的 current_weight 等于原 current_weight 加上其 effective_weight，同时累加所有节点的 effective_weight 为 total，然后选取 current_weight 最大的节点作为最终的选中节点，并将其 current_weight 等于原 current_weight 减去 total（没有被选中的节点无需减去 total）</li></ul><h3 id=举个栗子>举个栗子</h3><p>这么说可能有些抽象，用一个列表来描述可能更加形象一些，还是上面 [2, 1, 3] 的权重列表，依旧以 [A, B, C] 代替节点，其负载过程如下所示：</p><div class=table-wrapper><table><thead><tr><th>请求序列</th><th>选定之前的 current_weight 列表</th><th>选中节点</th><th>选定之后的 current_weight 列表</th></tr></thead><tbody><tr><td>1</td><td>[2, 1, 3]</td><td>C</td><td>[2, 1, -3]</td></tr><tr><td>2</td><td>[4, 2, 0]</td><td>A</td><td>[-2, 2, 0]</td></tr><tr><td>3</td><td>[0, 3, 3]</td><td>B</td><td>[0, -3, 3]</td></tr><tr><td>4</td><td>[2, -2, 6]</td><td>C</td><td>[2, -2, 0]</td></tr><tr><td>5</td><td>[4, -1, 3]</td><td>A</td><td>[-2, -1, 3]</td></tr><tr><td>6</td><td>[0, 0, 6]</td><td>C</td><td>[0, 0, 0]</td></tr><tr><td>7</td><td>[2, 1, 3]</td><td>C</td><td>[2, 1, -3]</td></tr></tbody></table></div><p>可以看到，其前 6 次负载列表为：[C, A, B, C, A, C]，且在第 6 次请求后，current_weight 列表恢复到了初始的 [0, 0, 0] 状态，也就是说其负载列表将会一直以 [C, A, B, C, A, C] 的形式循环下去</p><h2 id=实现>实现</h2><p>下面以 Java 为例，实现这一负载均衡算法</p><h3 id=节点类>节点类</h3><p>首先定义一个简单的节点类：</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre tabindex=0 class=chroma><code><span class=lnt> 1
+</span><span class=lnt> 2
+</span><span class=lnt> 3
+</span><span class=lnt> 4
+</span><span class=lnt> 5
+</span><span class=lnt> 6
+</span><span class=lnt> 7
+</span><span class=lnt> 8
+</span><span class=lnt> 9
+</span><span class=lnt>10
+</span><span class=lnt>11
+</span><span class=lnt>12
+</span><span class=lnt>13
+</span><span class=lnt>14
+</span><span class=lnt>15
+</span><span class=lnt>16
+</span><span class=lnt>17
+</span><span class=lnt>18
+</span><span class=lnt>19
+</span><span class=lnt>20
+</span><span class=lnt>21
+</span><span class=lnt>22
+</span><span class=lnt>23
+</span><span class=lnt>24
+</span><span class=lnt>25
+</span><span class=lnt>26
+</span><span class=lnt>27
+</span><span class=lnt>28
+</span><span class=lnt>29
+</span><span class=lnt>30
+</span><span class=lnt>31
+</span><span class=lnt>32
+</span><span class=lnt>33
+</span><span class=lnt>34
+</span><span class=lnt>35
+</span><span class=lnt>36
+</span><span class=lnt>37
+</span><span class=lnt>38
+</span><span class=lnt>39
+</span><span class=lnt>40
+</span><span class=lnt>41
+</span><span class=lnt>42
+</span><span class=lnt>43
+</span><span class=lnt>44
+</span><span class=lnt>45
+</span><span class=lnt>46
+</span><span class=lnt>47
+</span><span class=lnt>48
+</span><span class=lnt>49
+</span><span class=lnt>50
+</span><span class=lnt>51
+</span><span class=lnt>52
+</span><span class=lnt>53
+</span><span class=lnt>54
+</span><span class=lnt>55
+</span><span class=lnt>56
+</span><span class=lnt>57
+</span><span class=lnt>58
+</span><span class=lnt>59
+</span><span class=lnt>60
+</span><span class=lnt>61
+</span><span class=lnt>62
+</span><span class=lnt>63
+</span><span class=lnt>64
+</span><span class=lnt>65
+</span><span class=lnt>66
+</span><span class=lnt>67
+</span><span class=lnt>68
+</span><span class=lnt>69
+</span><span class=lnt>70
+</span></code></pre></td><td class=lntd><pre tabindex=0 class=chroma><code class=language-java data-lang=java><span class=line><span class=cl><span class=kd>public</span><span class=w> </span><span class=kd>class</span> <span class=nc>Instance</span><span class=w> </span><span class=kd>implements</span><span class=w> </span><span class=n>Serializable</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=nd>@Serial</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>private</span><span class=w> </span><span class=kd>static</span><span class=w> </span><span class=kd>final</span><span class=w> </span><span class=kt>long</span><span class=w> </span><span class=n>serialVersionUID</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>535926252786888744L</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>private</span><span class=w> </span><span class=n>String</span><span class=w> </span><span class=n>host</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>private</span><span class=w> </span><span class=n>Integer</span><span class=w> </span><span class=n>port</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>private</span><span class=w> </span><span class=n>Integer</span><span class=w> </span><span class=n>weight</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>private</span><span class=w> </span><span class=n>Integer</span><span class=w> </span><span class=n>effectiveWeight</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>private</span><span class=w> </span><span class=n>Integer</span><span class=w> </span><span class=n>currentWeight</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>public</span><span class=w> </span><span class=nf>Instance</span><span class=p>()</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=p>}</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>public</span><span class=w> </span><span class=nf>Instance</span><span class=p>(</span><span class=n>String</span><span class=w> </span><span class=n>host</span><span class=p>,</span><span class=w> </span><span class=n>Integer</span><span class=w> </span><span class=n>port</span><span class=p>,</span><span class=w> </span><span class=n>Integer</span><span class=w> </span><span class=n>weight</span><span class=p>)</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=k>this</span><span class=p>.</span><span class=na>host</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>host</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=k>this</span><span class=p>.</span><span class=na>port</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>port</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=k>this</span><span class=p>.</span><span class=na>weight</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>weight</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=k>this</span><span class=p>.</span><span class=na>effectiveWeight</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>weight</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=k>this</span><span class=p>.</span><span class=na>currentWeight</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>0</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=p>}</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>public</span><span class=w> </span><span class=n>String</span><span class=w> </span><span class=nf>getHost</span><span class=p>()</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=k>return</span><span class=w> </span><span class=n>host</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=p>}</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>public</span><span class=w> </span><span class=kt>void</span><span class=w> </span><span class=nf>setHost</span><span class=p>(</span><span class=n>String</span><span class=w> </span><span class=n>host</span><span class=p>)</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=k>this</span><span class=p>.</span><span class=na>host</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>host</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=p>}</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>public</span><span class=w> </span><span class=n>Integer</span><span class=w> </span><span class=nf>getPort</span><span class=p>()</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=k>return</span><span class=w> </span><span class=n>port</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=p>}</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>public</span><span class=w> </span><span class=kt>void</span><span class=w> </span><span class=nf>setPort</span><span class=p>(</span><span class=n>Integer</span><span class=w> </span><span class=n>port</span><span class=p>)</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=k>this</span><span class=p>.</span><span class=na>port</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>port</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=p>}</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>public</span><span class=w> </span><span class=n>Integer</span><span class=w> </span><span class=nf>getWeight</span><span class=p>()</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=k>return</span><span class=w> </span><span class=n>weight</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=p>}</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>public</span><span class=w> </span><span class=kt>void</span><span class=w> </span><span class=nf>setWeight</span><span class=p>(</span><span class=n>Integer</span><span class=w> </span><span class=n>weight</span><span class=p>)</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=k>this</span><span class=p>.</span><span class=na>weight</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>weight</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=p>}</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>public</span><span class=w> </span><span class=n>Integer</span><span class=w> </span><span class=nf>getEffectiveWeight</span><span class=p>()</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=k>return</span><span class=w> </span><span class=n>effectiveWeight</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=p>}</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>public</span><span class=w> </span><span class=kt>void</span><span class=w> </span><span class=nf>setEffectiveWeight</span><span class=p>(</span><span class=n>Integer</span><span class=w> </span><span class=n>effectiveWeight</span><span class=p>)</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=k>this</span><span class=p>.</span><span class=na>effectiveWeight</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>effectiveWeight</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=p>}</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>public</span><span class=w> </span><span class=n>Integer</span><span class=w> </span><span class=nf>getCurrentWeight</span><span class=p>()</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=k>return</span><span class=w> </span><span class=n>currentWeight</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=p>}</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>public</span><span class=w> </span><span class=kt>void</span><span class=w> </span><span class=nf>setCurrentWeight</span><span class=p>(</span><span class=n>Integer</span><span class=w> </span><span class=n>currentWeight</span><span class=p>)</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=k>this</span><span class=p>.</span><span class=na>currentWeight</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>currentWeight</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=p>}</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=nd>@Override</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>public</span><span class=w> </span><span class=n>String</span><span class=w> </span><span class=nf>toString</span><span class=p>()</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=k>return</span><span class=w> </span><span class=s>&#34;Instance{&#34;</span><span class=w> </span><span class=o>+</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>                </span><span class=s>&#34;host=&#39;&#34;</span><span class=w> </span><span class=o>+</span><span class=w> </span><span class=n>host</span><span class=w> </span><span class=o>+</span><span class=w> </span><span class=sc>&#39;\&#39;&#39;</span><span class=w> </span><span class=o>+</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>                </span><span class=s>&#34;, port=&#34;</span><span class=w> </span><span class=o>+</span><span class=w> </span><span class=n>port</span><span class=w> </span><span class=o>+</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>                </span><span class=s>&#34;, weight=&#34;</span><span class=w> </span><span class=o>+</span><span class=w> </span><span class=n>weight</span><span class=w> </span><span class=o>+</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>                </span><span class=sc>&#39;}&#39;</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=p>}</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w></span><span class=p>}</span><span class=w>
+</span></span></span></code></pre></td></tr></table></div></div><p>这个节点类除了包含最基本的 <code>host</code>、<code>port</code>、<code>weight</code> 属性外，还有两个属性，即 <code>effectiveWeight</code> 和 <code>currentWeight</code>，用来表示节点的有效权重和当前权重</p><h3 id=负载均衡器>负载均衡器</h3><p>接着定义一个 <code>LoadBalancer</code> 接口类：</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre tabindex=0 class=chroma><code><span class=lnt>1
+</span><span class=lnt>2
+</span><span class=lnt>3
+</span></code></pre></td><td class=lntd><pre tabindex=0 class=chroma><code class=language-java data-lang=java><span class=line><span class=cl><span class=kd>public</span><span class=w> </span><span class=kd>interface</span> <span class=nc>LoadBalancer</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=n>Instance</span><span class=w> </span><span class=nf>choose</span><span class=p>();</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w></span><span class=p>}</span><span class=w>
+</span></span></span></code></pre></td></tr></table></div></div><p>编写加权轮询负载均衡器实现这个接口：</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre tabindex=0 class=chroma><code><span class=lnt> 1
+</span><span class=lnt> 2
+</span><span class=lnt> 3
+</span><span class=lnt> 4
+</span><span class=lnt> 5
+</span><span class=lnt> 6
+</span><span class=lnt> 7
+</span><span class=lnt> 8
+</span><span class=lnt> 9
+</span><span class=lnt>10
+</span><span class=lnt>11
+</span><span class=lnt>12
+</span><span class=lnt>13
+</span><span class=lnt>14
+</span><span class=lnt>15
+</span><span class=lnt>16
+</span><span class=lnt>17
+</span><span class=lnt>18
+</span><span class=lnt>19
+</span><span class=lnt>20
+</span><span class=lnt>21
+</span><span class=lnt>22
+</span><span class=lnt>23
+</span><span class=lnt>24
+</span><span class=lnt>25
+</span><span class=lnt>26
+</span><span class=lnt>27
+</span><span class=lnt>28
+</span><span class=lnt>29
+</span><span class=lnt>30
+</span><span class=lnt>31
+</span><span class=lnt>32
+</span><span class=lnt>33
+</span></code></pre></td><td class=lntd><pre tabindex=0 class=chroma><code class=language-java data-lang=java><span class=line><span class=cl><span class=kd>public</span><span class=w> </span><span class=kd>class</span> <span class=nc>RoundRobinLoadBalancer</span><span class=w> </span><span class=kd>implements</span><span class=w> </span><span class=n>LoadBalancer</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>private</span><span class=w> </span><span class=kd>final</span><span class=w> </span><span class=n>List</span><span class=o>&lt;</span><span class=n>Instance</span><span class=o>&gt;</span><span class=w> </span><span class=n>instances</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>public</span><span class=w> </span><span class=nf>RoundRobinLoadBalancer</span><span class=p>(</span><span class=n>List</span><span class=o>&lt;</span><span class=n>Instance</span><span class=o>&gt;</span><span class=w> </span><span class=n>instances</span><span class=p>)</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=k>this</span><span class=p>.</span><span class=na>instances</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>instances</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=p>}</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=nd>@Override</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>public</span><span class=w> </span><span class=n>Instance</span><span class=w> </span><span class=nf>choose</span><span class=p>()</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=kt>int</span><span class=w> </span><span class=n>total</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>0</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=k>for</span><span class=w> </span><span class=p>(</span><span class=n>Instance</span><span class=w> </span><span class=n>instance</span><span class=w> </span><span class=p>:</span><span class=w> </span><span class=n>instances</span><span class=p>)</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>            </span><span class=kt>int</span><span class=w> </span><span class=n>effectiveWeight</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>instance</span><span class=p>.</span><span class=na>getEffectiveWeight</span><span class=p>();</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>            </span><span class=kt>int</span><span class=w> </span><span class=n>currentWeight</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>instance</span><span class=p>.</span><span class=na>getCurrentWeight</span><span class=p>();</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>            </span><span class=n>currentWeight</span><span class=w> </span><span class=o>+=</span><span class=w> </span><span class=n>effectiveWeight</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>            </span><span class=n>instance</span><span class=p>.</span><span class=na>setCurrentWeight</span><span class=p>(</span><span class=n>currentWeight</span><span class=p>);</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>            </span><span class=n>total</span><span class=w> </span><span class=o>+=</span><span class=w> </span><span class=n>effectiveWeight</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=p>}</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=kt>int</span><span class=w> </span><span class=n>max</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>0</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=kt>int</span><span class=w> </span><span class=n>index</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>0</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=k>for</span><span class=w> </span><span class=p>(</span><span class=kt>int</span><span class=w> </span><span class=n>i</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>0</span><span class=p>;</span><span class=w> </span><span class=n>i</span><span class=w> </span><span class=o>&lt;</span><span class=w> </span><span class=n>instances</span><span class=p>.</span><span class=na>size</span><span class=p>();</span><span class=w> </span><span class=n>i</span><span class=o>++</span><span class=p>)</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>            </span><span class=kt>int</span><span class=w> </span><span class=n>currentWeight</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>instances</span><span class=p>.</span><span class=na>get</span><span class=p>(</span><span class=n>i</span><span class=p>).</span><span class=na>getCurrentWeight</span><span class=p>();</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>            </span><span class=k>if</span><span class=w> </span><span class=p>(</span><span class=n>currentWeight</span><span class=w> </span><span class=o>&gt;</span><span class=w> </span><span class=n>max</span><span class=p>)</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>                </span><span class=n>max</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>currentWeight</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>                </span><span class=n>index</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>i</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>            </span><span class=p>}</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=p>}</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=n>Instance</span><span class=w> </span><span class=n>selectedInstance</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>instances</span><span class=p>.</span><span class=na>get</span><span class=p>(</span><span class=n>index</span><span class=p>);</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=kt>int</span><span class=w> </span><span class=n>selectedWeight</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>selectedInstance</span><span class=p>.</span><span class=na>getCurrentWeight</span><span class=p>();</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=kt>int</span><span class=w> </span><span class=n>currentWeight</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>selectedWeight</span><span class=w> </span><span class=o>-</span><span class=w> </span><span class=n>total</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=n>selectedInstance</span><span class=p>.</span><span class=na>setCurrentWeight</span><span class=p>(</span><span class=n>currentWeight</span><span class=p>);</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=k>return</span><span class=w> </span><span class=n>selectedInstance</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=p>}</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w></span><span class=p>}</span><span class=w>
+</span></span></span></code></pre></td></tr></table></div></div><h3 id=测试>测试</h3><p>测试是否运行正确：</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre tabindex=0 class=chroma><code><span class=lnt> 1
+</span><span class=lnt> 2
+</span><span class=lnt> 3
+</span><span class=lnt> 4
+</span><span class=lnt> 5
+</span><span class=lnt> 6
+</span><span class=lnt> 7
+</span><span class=lnt> 8
+</span><span class=lnt> 9
+</span><span class=lnt>10
+</span><span class=lnt>11
+</span><span class=lnt>12
+</span><span class=lnt>13
+</span><span class=lnt>14
+</span><span class=lnt>15
+</span><span class=lnt>16
+</span><span class=lnt>17
+</span><span class=lnt>18
+</span><span class=lnt>19
+</span><span class=lnt>20
+</span><span class=lnt>21
+</span><span class=lnt>22
+</span><span class=lnt>23
+</span><span class=lnt>24
+</span><span class=lnt>25
+</span><span class=lnt>26
+</span></code></pre></td><td class=lntd><pre tabindex=0 class=chroma><code class=language-java data-lang=java><span class=line><span class=cl><span class=kd>public</span><span class=w> </span><span class=kd>class</span> <span class=nc>RoundRobinLoadBalancerTest</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=nd>@Test</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=kd>public</span><span class=w> </span><span class=kt>void</span><span class=w> </span><span class=nf>test</span><span class=p>()</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=n>List</span><span class=o>&lt;</span><span class=n>Instance</span><span class=o>&gt;</span><span class=w> </span><span class=n>instances</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>List</span><span class=p>.</span><span class=na>of</span><span class=p>(</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>                </span><span class=k>new</span><span class=w> </span><span class=n>Instance</span><span class=p>(</span><span class=s>&#34;192.168.21.1&#34;</span><span class=p>,</span><span class=w> </span><span class=n>8080</span><span class=p>,</span><span class=w> </span><span class=n>2</span><span class=p>),</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>                </span><span class=k>new</span><span class=w> </span><span class=n>Instance</span><span class=p>(</span><span class=s>&#34;192.168.21.2&#34;</span><span class=p>,</span><span class=w> </span><span class=n>8080</span><span class=p>,</span><span class=w> </span><span class=n>1</span><span class=p>),</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>                </span><span class=k>new</span><span class=w> </span><span class=n>Instance</span><span class=p>(</span><span class=s>&#34;192.168.21.3&#34;</span><span class=p>,</span><span class=w> </span><span class=n>8080</span><span class=p>,</span><span class=w> </span><span class=n>3</span><span class=p>)</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=p>);</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=n>LoadBalancer</span><span class=w> </span><span class=n>loadBalancer</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=k>new</span><span class=w> </span><span class=n>RoundRobinLoadBalancer</span><span class=p>(</span><span class=n>instances</span><span class=p>);</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=n>List</span><span class=o>&lt;</span><span class=n>String</span><span class=o>&gt;</span><span class=w> </span><span class=n>expectedHosts</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>List</span><span class=p>.</span><span class=na>of</span><span class=p>(</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>                </span><span class=s>&#34;192.168.21.3&#34;</span><span class=p>,</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>                </span><span class=s>&#34;192.168.21.1&#34;</span><span class=p>,</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>                </span><span class=s>&#34;192.168.21.2&#34;</span><span class=p>,</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>                </span><span class=s>&#34;192.168.21.3&#34;</span><span class=p>,</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>                </span><span class=s>&#34;192.168.21.1&#34;</span><span class=p>,</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>                </span><span class=s>&#34;192.168.21.3&#34;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=p>);</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=k>for</span><span class=w> </span><span class=p>(</span><span class=kt>int</span><span class=w> </span><span class=n>i</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>0</span><span class=p>;</span><span class=w> </span><span class=n>i</span><span class=w> </span><span class=o>&lt;</span><span class=w> </span><span class=n>18</span><span class=p>;</span><span class=w> </span><span class=n>i</span><span class=o>++</span><span class=p>)</span><span class=w> </span><span class=p>{</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>            </span><span class=n>Instance</span><span class=w> </span><span class=n>instance</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>loadBalancer</span><span class=p>.</span><span class=na>choose</span><span class=p>();</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>            </span><span class=n>String</span><span class=w> </span><span class=n>actual</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>instance</span><span class=p>.</span><span class=na>getHost</span><span class=p>();</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>            </span><span class=kt>int</span><span class=w> </span><span class=n>index</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>i</span><span class=w> </span><span class=o>%</span><span class=w> </span><span class=n>6</span><span class=p>;</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>            </span><span class=n>String</span><span class=w> </span><span class=n>expected</span><span class=w> </span><span class=o>=</span><span class=w> </span><span class=n>expectedHosts</span><span class=p>.</span><span class=na>get</span><span class=p>(</span><span class=n>index</span><span class=p>);</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>            </span><span class=n>Assertions</span><span class=p>.</span><span class=na>assertEquals</span><span class=p>(</span><span class=n>expected</span><span class=p>,</span><span class=w> </span><span class=n>actual</span><span class=p>);</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>        </span><span class=p>}</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w>    </span><span class=p>}</span><span class=w>
+</span></span></span><span class=line><span class=cl><span class=w></span><span class=p>}</span><span class=w>
+</span></span></span></code></pre></td></tr></table></div></div><p>如期运行</p><blockquote><p>Cover from <a class=link href=https://unsplash.com/@opohmelka target=_blank rel=noopener>Sergio Zhukov</a> on <a class=link href=https://unsplash.com/ target=_blank rel=noopener>unsplash</a></p></blockquote></section><footer class=article-footer><section class=article-tags><a href=/tags/loadbalancer/>LoadBalancer</a>
+<a href=/tags/loadbalance/>LoadBalance</a>
+<a href=/tags/roundrobin/>RoundRobin</a></section><section class=article-copyright><svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-copyright" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentcolor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><circle cx="12" cy="12" r="9"/><path d="M14.5 9a3.5 4 0 100 6"/></svg><span>Licensed under CC BY-NC-SA 4.0</span></section></footer></article><aside class=related-content--wrapper><h2 class=section-title>Related content</h2><div class=related-content><div class="flex article-list--tile"><article class=has-image><a href=/p/java-%E9%9B%86%E5%90%88%E6%A1%86%E6%9E%B6/><div class=article-image><img src=/p/java-%E9%9B%86%E5%90%88%E6%A1%86%E6%9E%B6/cover.7c178ec7cd71509ec9f9e6fabcb4394d_hu3d03a01dcc18bc5be0e67db3d8d209a6_292617_250x150_fill_q75_box_smart1.jpg width=250 height=150 loading=lazy alt="Featured image of post Java 集合框架" data-hash="md5-fBeOx81xUJ7J+eb6vLQ5TQ=="></div><div class=article-details><h2 class=article-title>Java 集合框架</h2></div></a></article></div></div></aside><div class=disqus-container><div id=disqus_thread></div><script>window.disqus_config=function(){},function(){if(["localhost","127.0.0.1"].indexOf(window.location.hostname)!=-1){document.getElementById("disqus_thread").innerHTML="Disqus comments not available by default when the website is previewed locally.";return}var t=document,e=t.createElement("script");e.async=!0,e.src="//yameizitd.disqus.com/embed.js",e.setAttribute("data-timestamp",+new Date),(t.head||t.body).appendChild(e)}()</script><noscript>Please enable JavaScript to view the <a href=https://disqus.com/?ref_noscript>comments powered by Disqus.</a></noscript><a href=https://disqus.com class=dsq-brlink>comments powered by <span class=logo-disqus>Disqus</span></a></div><style>.disqus-container{background-color:var(--card-background);border-radius:var(--card-border-radius);box-shadow:var(--shadow-l1);padding:var(--card-padding)}</style><script>window.addEventListener("onColorSchemeChange",e=>{typeof DISQUS=="object"&&DISQUS.reset({reload:!0})})</script><footer class=site-footer><section class=copyright>&copy;
+2020 -
+2023 yameizitd</section><section class=powerby>Built with <a href=https://gohugo.io/ target=_blank rel=noopener>Hugo</a><br>Theme <b><a href=https://github.com/CaiJimmy/hugo-theme-stack target=_blank rel=noopener data-version=3.21.0>Stack</a></b> designed by <a href=https://jimmycai.com target=_blank rel=noopener>Jimmy</a></section></footer><div class=pswp tabindex=-1 role=dialog aria-hidden=true><div class=pswp__bg></div><div class=pswp__scroll-wrap><div class=pswp__container><div class=pswp__item></div><div class=pswp__item></div><div class=pswp__item></div></div><div class="pswp__ui pswp__ui--hidden"><div class=pswp__top-bar><div class=pswp__counter></div><button class="pswp__button pswp__button--close" title="Close (Esc)"></button>
+<button class="pswp__button pswp__button--share" title=Share></button>
+<button class="pswp__button pswp__button--fs" title="Toggle fullscreen"></button>
+<button class="pswp__button pswp__button--zoom" title="Zoom in/out"></button><div class=pswp__preloader><div class=pswp__preloader__icn><div class=pswp__preloader__cut><div class=pswp__preloader__donut></div></div></div></div></div><div class="pswp__share-modal pswp__share-modal--hidden pswp__single-tap"><div class=pswp__share-tooltip></div></div><button class="pswp__button pswp__button--arrow--left" title="Previous (arrow left)">
+</button>
+<button class="pswp__button pswp__button--arrow--right" title="Next (arrow right)"></button><div class=pswp__caption><div class=pswp__caption__center></div></div></div></div></div><script src=https://cdn.jsdelivr.net/npm/photoswipe@4.1.3/dist/photoswipe.min.js integrity="sha256-ePwmChbbvXbsO02lbM3HoHbSHTHFAeChekF1xKJdleo=" crossorigin=anonymous defer></script><script src=https://cdn.jsdelivr.net/npm/photoswipe@4.1.3/dist/photoswipe-ui-default.min.js integrity="sha256-UKkzOn/w1mBxRmLLGrSeyB4e1xbrp4xylgAWb3M42pU=" crossorigin=anonymous defer></script><link rel=stylesheet href=https://cdn.jsdelivr.net/npm/photoswipe@4.1.3/dist/default-skin/default-skin.min.css crossorigin=anonymous><link rel=stylesheet href=https://cdn.jsdelivr.net/npm/photoswipe@4.1.3/dist/photoswipe.min.css crossorigin=anonymous></main></div><script src=https://cdn.jsdelivr.net/npm/node-vibrant@3.1.6/dist/vibrant.min.js integrity="sha256-awcR2jno4kI5X0zL8ex0vi2z+KMkF24hUW8WePSA9HM=" crossorigin=anonymous></script><script type=text/javascript src=/ts/main.js defer></script><script>(function(){const e=document.createElement("link");e.href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&display=swap",e.type="text/css",e.rel="stylesheet",document.head.appendChild(e)})()</script></body></html>
